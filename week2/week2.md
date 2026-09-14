@@ -67,7 +67,7 @@ Rz 180을 넣고 공전을 시켜야 달이 항상 지구를 바라보았다.
 
 지구 반지름의 크기가 6371km이기 때문이다.
 
-![Task 1 결과](images/task1.png)
+![Task 1 결과](images/task1.PNG)
 
 - 공유 링크: https://cg.catholic.ac.kr/~mgchoi/CG/demos/d02-transform-lab.html?d=eyJyYW5nZSI6eyJ4IjoiNDIwMDAwIiwieSI6IjQyMDAwMCIsInoiOiI0MjAwMDAifSwib2JqZWN0cyI6W3siaWQiOiJlYXJ0aCIsIm5hbWUiOiLsp4DqtawiLCJjb2xvciI6WzAuMzUsMC42LDAuOTVdLCJzdGVwcyI6W3sidHlwZSI6IlN1IiwiYXJncyI6WyI2MzcxIl19XX0seyJpZCI6Im1vb24iLCJuYW1lIjoi64usIiwiY29sb3IiOlswLjc4LDAuNzgsMC44Ml0sInN0ZXBzIjpbeyJ0eXBlIjoiVCIsImFyZ3MiOlsiMzg0NDAwIiwiMCIsIjAiXX0seyJ0eXBlIjoiUnoiLCJhcmdzIjpbIjE4MCJdfSx7InR5cGUiOiJTdSIsImFyZ3MiOlsiMTczNyJdfV19LHsiaWQiOiJzYXQiLCJuYW1lIjoi7J246rO17JyE7ISxIiwiY29sb3IiOlswLjk1LDAuNzIsMC4zNV0sInN0ZXBzIjpbeyJ0eXBlIjoiUngiLCJhcmdzIjpbIjUzLjE1OTAiXX0seyJ0eXBlIjoiUnoiLCJhcmdzIjpbInQqMy44MTkiXX0seyJ0eXBlIjoiVCIsImFyZ3MiOlsiNjg0OSIsIjAiLCIwIl19LHsidHlwZSI6IlMiLCJhcmdzIjpbIjAuMDAzMiIsIjAuMDAxNiIsIjAuMDAwMiJdfSx7InR5cGUiOiJSeSIsImFyZ3MiOlsiOTAiXX1dfV19
 
@@ -109,6 +109,7 @@ Rz 180을 넣고 공전을 시켜야 달이 항상 지구를 바라보았다.
 { "type": "Rz", "args": ["180"] }
 ]
 task 1에서 비율을 맞추기 위해 추가하였다.
+
 **인공위성**
 [
 { "type": "Su","args": ["0.0000024"]},
@@ -119,6 +120,7 @@ task 1에서 비율을 맞추기 위해 추가하였다.
 { "type": "Ry","args": [ "90"]}
 ]
 task 1에서 비율을 맞추기 위해 추가하였다.
+
 **지구**
 [
 { "type": "Su","args": ["0.0000024"]},
@@ -126,7 +128,7 @@ task 1에서 비율을 맞추기 위해 추가하였다.
 ]
 task 1에서 비율을 맞추기 위해 추가하였다.
 
-![Task 2 결과](images/task2.png)
+![Task 2 결과](images/task2.PNG)
 
 - 공유 링크:https://cg.catholic.ac.kr/~mgchoi/CG/demos/d02-transform-lab.html?d=eyJyYW5nZSI6eyJ4IjoiMSIsInkiOiIxIiwieiI6IjEifSwib2JqZWN0cyI6W3siaWQiOiJlYXJ0aCIsIm5hbWUiOiLsp4DqtawiLCJjb2xvciI6WzAuMzUsMC42LDAuOTVdLCJzdGVwcyI6W3sidHlwZSI6IlN1IiwiYXJncyI6WyIwLjAwMDAwMjQiXX0seyJ0eXBlIjoiU3UiLCJhcmdzIjpbIjYzNzEiXX1dfSx7ImlkIjoibW9vbiIsIm5hbWUiOiLri6wiLCJjb2xvciI6WzAuNzgsMC43OCwwLjgyXSwic3RlcHMiOlt7InR5cGUiOiJTdSIsImFyZ3MiOlsiMC4wMDAwMDI0Il19LHsidHlwZSI6IlJ6IiwiYXJncyI6WyIwLjAwOTEqdCJdfSx7InR5cGUiOiJUIiwiYXJncyI6WyIzODQ0MDAiLCIwIiwiMCJdfSx7InR5cGUiOiJTdSIsImFyZ3MiOlsiMTczNyJdfSx7InR5cGUiOiJSeiIsImFyZ3MiOlsiMTgwIl19XX0seyJpZCI6InNhdCIsIm5hbWUiOiLsnbjqs7XsnITshLEiLCJjb2xvciI6WzAuOTUsMC43MiwwLjM1XSwic3RlcHMiOlt7InR5cGUiOiJTdSIsImFyZ3MiOlsiMC4wMDAwMDI0Il19LHsidHlwZSI6IlJ4IiwiYXJncyI6WyI1My4xNTkwIl19LHsidHlwZSI6IlJ6IiwiYXJncyI6WyJ0KjMuODE5Il19LHsidHlwZSI6IlQiLCJhcmdzIjpbIjY4NDkiLCIwIiwiMCJdfSx7InR5cGUiOiJTIiwiYXJncyI6WyIwLjAwMzIiLCIwLjAwMTYiLCIwLjAwMDIiXX0seyJ0eXBlIjoiUnkiLCJhcmdzIjpbIjkwIl19XX1dfQ%3D%3D
 
@@ -164,6 +166,7 @@ task 1에서 비율을 맞추기 위해 추가하였다.
 { "type": "Rz", "args": ["180"] }
 ]
 task 2에서 시각적으로 다르게 보이게 하기 위해 크기를 10배, 공전 속도를 10배 해줬다.
+
 **인공위성**
 [
 { "type": "Su","args": ["0.0000024"]},
@@ -175,6 +178,7 @@ task 2에서 시각적으로 다르게 보이게 하기 위해 크기를 10배, 
 ]
 task 2에서 시각적으로 다르게 보이게 하기 위해 크기를 1000000배, 공전 속도를 10배 해줬다.
 추가로 위치도 지구의 크기 증가 비율에 맞게 6849에서 68490으로 옮겨줬다
+
 **지구**
 [
 { "type": "Su","args": ["0.0000024"]},
@@ -182,6 +186,6 @@ task 2에서 시각적으로 다르게 보이게 하기 위해 크기를 1000000
 ]
 task 2에서 시각적으로 다르게 보이게 하기 위해 크기를 10배 해줬다.
 
-![Task 3 결과](images/task3.png)
+![Task 3 결과](images/task3.PNG)
 
 - 공유 링크: https://cg.catholic.ac.kr/~mgchoi/CG/demos/d02-transform-lab.html?d=eyJyYW5nZSI6eyJ4IjoiMSIsInkiOiIxIiwieiI6IjEifSwib2JqZWN0cyI6W3siaWQiOiJlYXJ0aCIsIm5hbWUiOiLsp4DqtawiLCJjb2xvciI6WzAuMzUsMC42LDAuOTVdLCJzdGVwcyI6W3sidHlwZSI6IlN1IiwiYXJncyI6WyIwLjAwMDAwMjQiXX0seyJ0eXBlIjoiU3UiLCJhcmdzIjpbIjYzNzEwIl19XX0seyJpZCI6Im1vb24iLCJuYW1lIjoi64usIiwiY29sb3IiOlswLjc4LDAuNzgsMC44Ml0sInN0ZXBzIjpbeyJ0eXBlIjoiU3UiLCJhcmdzIjpbIjAuMDAwMDAyNCJdfSx7InR5cGUiOiJSeiIsImFyZ3MiOlsiMC4wOTEqdCJdfSx7InR5cGUiOiJUIiwiYXJncyI6WyIzODQ0MDAiLCIwIiwiMCJdfSx7InR5cGUiOiJTdSIsImFyZ3MiOlsiMTczNzAiXX0seyJ0eXBlIjoiUnoiLCJhcmdzIjpbIjE4MCJdfV19LHsiaWQiOiJzYXQiLCJuYW1lIjoi7J246rO17JyE7ISxIiwiY29sb3IiOlswLjk1LDAuNzIsMC4zNV0sInN0ZXBzIjpbeyJ0eXBlIjoiU3UiLCJhcmdzIjpbIjAuMDAwMDAyNCJdfSx7InR5cGUiOiJSeCIsImFyZ3MiOlsiNTMuMTU5MCJdfSx7InR5cGUiOiJSeiIsImFyZ3MiOlsidCozOC4xOSJdfSx7InR5cGUiOiJUIiwiYXJncyI6WyI2ODQ5MCIsIjAiLCIwIl19LHsidHlwZSI6IlMiLCJhcmdzIjpbIjMyMDAiLCIxNjAwIiwiMjAwIl19LHsidHlwZSI6IlJ5IiwiYXJncyI6WyI5MCJdfV19XX0%3D
