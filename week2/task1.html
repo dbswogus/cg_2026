@@ -357,7 +357,7 @@ const gridBuf = lineBuf(400), axesBuf = lineBuf(24);
 /* ══════════════════════════════════════════════════════════════════════════
    5. 카메라 — 마우스로 돌려 보기
    ══════════════════════════════════════════════════════════════════════════ */
-const cam = { yaw: 0.7, pitch: 0.42, dist: 9 };
+const cam = { yaw: 0.7, pitch: 0.42, dist: 500000 };
 let dragging = false, px = 0, py = 0;
 
 cv.addEventListener('pointerdown', e => {
@@ -377,7 +377,7 @@ cv.addEventListener('pointerup', endDrag);
 cv.addEventListener('pointercancel', endDrag);
 cv.addEventListener('wheel', e => {
   e.preventDefault();
-  cam.dist = Math.max(0.5, Math.min(200, cam.dist * Math.exp(e.deltaY * 0.001)));
+  cam.dist = Math.max(10000, Math.min(1000000, cam.dist * Math.exp(e.deltaY * 0.001)));
 }, { passive: false });
 
 /* z 축이 위인 좌표계입니다 (실습 도구와 같습니다) */
