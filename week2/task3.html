@@ -65,7 +65,7 @@ function earthMatrix(t) {
 function moonMatrix(t) {
   let M = M4.identity(M4.create());
   M = M4.scale(M, M, [0.0000024, 0.0000024, 0.0000024]);   // 크기(균등) 0.0000024배
-  M = M4.rotateZ(M, M, deg(00.091 * t));   // 회전 Rz(00.091*t도)
+  M = M4.rotateZ(M, M, deg(0.091 * t));   // 회전 Rz(00.091*t도)
   M = M4.translate(M, M, [384400, 0, 0]);   // 이동 T(384400, 0, 0)
   M = M4.scale(M, M, [17370, 17370, 17370]);   // 크기(균등) 17370배
   M = M4.rotateZ(M, M, deg(180));   // 회전 Rz(180도)
@@ -360,7 +360,7 @@ const gridBuf = lineBuf(400), axesBuf = lineBuf(24);
 /* ══════════════════════════════════════════════════════════════════════════
    5. 카메라 — 마우스로 돌려 보기
    ══════════════════════════════════════════════════════════════════════════ */
-const cam = { yaw: 0.7, pitch: 0.42, dist: 9 };
+const cam = { yaw: 0.7, pitch: 0.42, dist: 2.5 };
 let dragging = false, px = 0, py = 0;
 
 cv.addEventListener('pointerdown', e => {
