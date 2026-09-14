@@ -3,7 +3,7 @@
 - 이름: 윤재현
 - 저장소: https://github.com/dbswogus/cg_2026
 - 실행: [Task 1](task1.html) · [Task 2](task2.html) · [Task 3](task3.html)
-
+- 인터넷에서 실행: [Task1](https://dbswougs.github.io/cg_2026/week2/task1.html) · [Task2](https://dbswougs.github.io/cg_2026/week2/task2.html) · [Task3](https://dbswougs.github.io/cg_2026/week2/task3.html) 
 ## Task 1 — 실제 비율로 배치하기
 
 ### 조사한 값
