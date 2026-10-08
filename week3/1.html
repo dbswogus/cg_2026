@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HAND ARENA - 모션캡처 가위바위보</title>
+  <style>
+    @import url("https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Space+Mono:wght@400;700&display=swap");
+    :root { --ink:#f5f2e9; --muted:#9ba0b5; --cyan:#4de7e0; --pink:#ff4f87; --yellow:#ffd166; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; color:var(--ink); font-family:"Space Mono","Malgun Gothic",monospace;
+      background:#101018; background-image:linear-gradient(#ffffff06 1px,transparent 1px),
+      linear-gradient(90deg,#ffffff06 1px,transparent 1px); background-size:32px 32px; }
+    main { width:min(1120px,100%); margin:auto; padding:28px 22px 34px; }
+    .top { display:flex; justify-content:space-between; align-items:end; border-bottom:2px solid var(--cyan); padding-bottom:17px; }
+    .eyebrow { color:var(--cyan); letter-spacing:.18em; font-size:.72rem; }
+    h1 { margin:5px 0 0; font:normal clamp(2.4rem,7vw,5.2rem)/.95 "Black Han Sans",sans-serif; letter-spacing:-.05em; }
+    .round { text-align:right; color:var(--muted); font-size:.75rem; line-height:1.7; }
+    .round strong { display:block; color:var(--yellow); font-size:1.3rem; }
+    .arena { position:relative; margin-top:25px; display:grid; grid-template-columns:minmax(0,1fr) 250px; gap:20px; }
+    .camera { position:relative; min-height:480px; padding:12px; border:1px solid #ffffff26; background:#171722; }
+    .camera:before,.camera:after { content:""; position:absolute; width:34px; height:34px; border-color:var(--pink); border-style:solid; pointer-events:none; }
+    .camera:before { left:-6px; top:-6px; border-width:3px 0 0 3px; }.camera:after { right:-6px; bottom:-6px; border-width:0 3px 3px 0; }
+    .screen { position:relative; height:100%; min-height:454px; overflow:hidden; background:#050509; }
+    video,canvas { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; transform:scaleX(-1); }
+    canvas { pointer-events:none; }
+    .grid { position:absolute; inset:0; background:linear-gradient(transparent 49.8%,#4de7e026 50%,transparent 50.2%),linear-gradient(90deg,transparent 49.8%,#4de7e026 50%,transparent 50.2%); background-size:100% 80px,80px 100%; pointer-events:none; }
+    .placeholder { position:absolute; inset:0; display:grid; place-items:center; text-align:center; color:var(--muted); }
+    .placeholder b { display:block; margin-bottom:13px; color:var(--pink); font-size:3rem; }
+    .scan { position:absolute; top:0; left:0; width:100%; height:2px; background:var(--cyan); box-shadow:0 0 14px var(--cyan); animation:scan 3s linear infinite; }
+    @keyframes scan { to { top:100%; } }
+    .hud { position:absolute; left:18px; right:18px; top:15px; display:flex; justify-content:space-between; color:var(--cyan); font-size:.72rem; }
+    .message { position:absolute; left:0; right:0; bottom:17px; text-align:center; color:var(--yellow); font-size:.8rem; }
+    .countdown { position:absolute; inset:0; display:grid; place-items:center; font:normal 9rem "Black Han Sans",sans-serif; color:var(--pink); text-shadow:0 0 25px #ff4f8788; opacity:0; pointer-events:none; }
+    .countdown.show { opacity:1; }
+    .side { display:flex; flex-direction:column; gap:14px; }
+    .scoreboard,.guide,.history { padding:18px; border:1px solid #ffffff20; background:#171722; }
+    .side h2 { margin:0 0 14px; color:var(--cyan); font-size:.8rem; letter-spacing:.12em; }
+    .scoreline { display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid #ffffff18; }
+    .scoreline:last-child { border:0; }.scoreline b { font-size:1.5rem; color:var(--yellow); }
+    .guide p { margin:9px 0; color:var(--muted); font-size:.75rem; line-height:1.6; }
+    .moves { display:grid; grid-template-columns:repeat(3,1fr); gap:5px; margin-top:13px; }
+    .moves div { padding:8px 2px; text-align:center; background:#ffffff08; font-size:1.3rem; }.moves small { display:block; color:var(--muted); font-size:.55rem; }
+    .history { flex:1; min-height:130px; }.history ol { margin:0; padding-left:22px; color:var(--muted); font-size:.7rem; line-height:1.9; }
+    button { border:0; padding:15px; color:#101018; background:var(--cyan); font:700 .85rem "Space Mono"; cursor:pointer; }
+    button:hover { background:var(--yellow); } button:disabled { opacity:.5; cursor:wait; }
+    @media(max-width:760px) { main{padding:18px 14px}.top{align-items:start}.arena{grid-template-columns:1fr}.camera{min-height:0}.screen{min-height:58vw}.side{display:grid;grid-template-columns:1fr 1fr}.history{grid-column:1/-1}.round{display:none} }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="top">
+      <div><div class="eyebrow">MOTION CAPTURE / LIVE MATCH</div><h1>HAND ARENA</h1></div>
+      <div class="round">ROUND <strong id="round">00</strong>CAMERA GAME</div>
+    </header>
+    <section class="arena">
+      <div class="camera">
+        <div class="screen">
+          <video id="video" playsinline muted></video><canvas id="overlay"></canvas><div class="grid"></div><div class="scan"></div>
+          <div class="hud"><span>● LIVE FEED</span><span id="detected">NO HAND</span></div>
+          <div class="placeholder" id="placeholder"><div><b>◎</b>카메라를 연결하고<br>손을 센서 영역에 보여주세요</div></div>
+          <div class="countdown" id="countdown"></div><div class="message" id="status">SYSTEM READY — START를 눌러주세요</div>
+        </div>
+      </div>
+      <aside class="side">
+        <div class="scoreboard"><h2>전적 / SCORE</h2><div class="scoreline"><span>PLAYER</span><b id="wins">0</b></div><div class="scoreline"><span>CPU</span><b id="losses">0</b></div><div class="scoreline"><span>DRAW</span><b id="draws">0</b></div></div>
+        <div class="guide"><h2>GESTURE GUIDE</h2><p>손 모양을 감지하면<br>카운트다운 후 판정합니다.</p><div class="moves"><div>✊<small>ROCK</small></div><div>✋<small>PAPER</small></div><div>✌️<small>SCISSORS</small></div></div></div>
+        <div class="history"><h2>LAST MATCHES</h2><ol id="history"><li>아직 기록이 없습니다</li></ol></div>
+        <button id="startButton">START CAMERA</button>
+      </aside>
+    </section>
+  </main>
+  <script type="module">
+    import { FilesetResolver, HandLandmarker, DrawingUtils } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+    const $=s=>document.querySelector(s), video=$("#video"), canvas=$("#overlay"), ctx=canvas.getContext("2d");
+    const button=$("#startButton"), status=$("#status"), placeholder=$("#placeholder"), countdown=$("#countdown"), detected=$("#detected");
+    const emoji={rock:"✊",paper:"✋",scissors:"✌️"}, label={rock:"ROCK",paper:"PAPER",scissors:"SCISSORS"};
+    let model,stream,active=false,held="",heldSince=0,lastRound=0,round=0,wins=0,losses=0,draws=0;
+    function classify(hand){const tips=[8,12,16,20], joints=[6,10,14,18], open=tips.map((t,i)=>hand[t].y<hand[joints[i]].y-.025),[a,b,c,d]=open;
+      const thumb=Math.hypot(hand[4].x-hand[5].x,hand[4].y-hand[5].y)>Math.hypot(hand[3].x-hand[5].x,hand[3].y-hand[5].y)*1.12;
+      if(a&&b&&!c&&!d)return"scissors";if(a&&b&&c&&d&&thumb)return"paper";if(!a&&!b&&!c&&!d)return"rock";return"";}
+    function play(player){const choices=Object.keys(emoji),cpu=choices[Math.floor(Math.random()*3)],winsPlayer=(player==="rock"&&cpu==="scissors")||(player==="paper"&&cpu==="rock")||(player==="scissors"&&cpu==="paper");
+      round++;$("#round").textContent=String(round).padStart(2,"0"); let text,cls;if(player===cpu){draws++;text="DRAW";cls="draw";}else if(winsPlayer){wins++;text="PLAYER WIN";cls="win";}else{losses++;text="CPU WIN";cls="lose";}
+      $("#wins").textContent=wins;$("#losses").textContent=losses;$("#draws").textContent=draws;const list=$("#history");if(round===1)list.innerHTML="";
+      const item=document.createElement("li");item.textContent=`${label[player]}  vs  ${label[cpu]}  →  ${text}`;list.prepend(item);while(list.children.length>4)list.lastElementChild.remove();
+      status.textContent=`${emoji[player]} ${label[player]}  /  CPU ${emoji[cpu]}  —  ${text}`;status.dataset.result=cls;lastRound=performance.now();held="";}
+    async function start(){button.disabled=true;status.textContent="LOADING HAND SENSOR…";try{const vision=await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
+      model=await HandLandmarker.createFromOptions(vision,{baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",delegate:"GPU"},runningMode:"VIDEO",numHands:1});
+      stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"user"},audio:false});video.srcObject=stream;await video.play();canvas.width=video.videoWidth;canvas.height=video.videoHeight;active=true;placeholder.hidden=true;button.textContent="STOP CAMERA";button.disabled=false;status.textContent="SENSOR ONLINE — SHOW YOUR MOVE";requestAnimationFrame(detect);
+    }catch(e){console.error(e);status.textContent=e.name==="NotAllowedError"?"카메라 권한을 허용해주세요":"센서를 불러오지 못했습니다. 인터넷 연결을 확인해주세요.";button.disabled=false;}}
+    function stop(){active=false;if(stream)stream.getTracks().forEach(t=>t.stop());video.srcObject=null;ctx.clearRect(0,0,canvas.width,canvas.height);placeholder.hidden=false;button.textContent="START CAMERA";detected.textContent="NO HAND";status.textContent="SYSTEM READY — START를 눌러주세요";}
+    function detect(){if(!active)return;if(video.readyState>=2){const prediction=model.detectForVideo(video,performance.now());ctx.clearRect(0,0,canvas.width,canvas.height);
+      if(prediction.landmarks.length){const hand=prediction.landmarks[0],draw=new DrawingUtils(ctx);draw.drawConnectors(hand,HandLandmarker.HAND_CONNECTIONS,{color:"#4de7e0",lineWidth:3});draw.drawLandmarks(hand,{color:"#ff4f87",lineWidth:1,radius:3});const gesture=classify(hand);detected.textContent=gesture?label[gesture]:"UNSTABLE";
+        if(gesture){if(gesture!==held){held=gesture;heldSince=performance.now();}const elapsed=performance.now()-heldSince;if(elapsed>450&&performance.now()-lastRound>2200){countdown.classList.add("show");countdown.textContent="3";setTimeout(()=>countdown.textContent="2",300);setTimeout(()=>countdown.textContent="1",600);setTimeout(()=>{if(active&&held===gesture){countdown.classList.remove("show");play(gesture);}},900);held="pending";}status.textContent=`${label[gesture]} LOCKED — HOLD`;}}
+      else{held="";detected.textContent="NO HAND";status.textContent="SHOW ROCK / PAPER / SCISSORS";}}requestAnimationFrame(detect);}
+    button.addEventListener("click",()=>active?stop():start());
+  </script>
+</body>
+</html>
