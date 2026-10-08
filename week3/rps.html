@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>손으로 하는 가위바위보</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, "Malgun Gothic", sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px;
+      color: #f4f6ff; background: radial-gradient(ellipse at 50% 0%, #24356a 0, #11172d 45%, #0b1020 100%); }
+    main { width: min(960px, 100%); }
+    header { text-align: center; margin-bottom: 22px; }
+    h1 { margin: 0 0 8px; font-size: clamp(2rem, 5vw, 3.2rem); letter-spacing: -.04em; }
+    header p { margin: 0; color: #b9c3e2; }
+    .game { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(240px, .8fr); gap: 18px; }
+    .camera, .panel { border: 1px solid #ffffff20; border-radius: 22px; background: #151d35cc; box-shadow: 0 18px 60px #0005; }
+    .camera { padding: 12px; }
+    .screen { position: relative; aspect-ratio: 4/3; overflow: hidden; border-radius: 14px; background: #080c17; }
+    video, canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+    canvas { pointer-events: none; }
+    .placeholder { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 20px; color: #aab6d8; }
+    .placeholder span { display: block; font-size: 3rem; margin-bottom: 8px; }
+    .status { min-height: 25px; padding: 10px 4px 0; color: #b9c3e2; font-size: .92rem; }
+    .panel { padding: 22px; display: flex; flex-direction: column; align-items: center; text-align: center; }
+    .panel h2 { margin: 0 0 16px; font-size: 1.15rem; color: #c5cdec; }
+    .hands { width: 100%; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; }
+    .choice { min-width: 0; padding: 16px 8px; border-radius: 16px; background: #ffffff0b; }
+    .emoji { display: block; font-size: clamp(2.6rem, 7vw, 4rem); }
+    .label { display: block; color: #b9c3e2; font-size: .9rem; }
+    .versus { color: #7d8ab0; font-weight: 800; }
+    .result { min-height: 42px; margin: 20px 0; font-size: 1.5rem; font-weight: 800; color: #a9f2cd; }
+    .score { color: #b9c3e2; margin: 0 0 20px; }
+    button { border: 0; border-radius: 999px; padding: 13px 24px; font: inherit; font-weight: 750; color: #11172d; background: #9af0c1; cursor: pointer; transition: transform .15s, filter .15s; }
+    button:hover { transform: translateY(-2px); filter: brightness(1.06); }
+    button:disabled { cursor: wait; opacity: .65; }
+    .hint { margin: 16px 0 0; color: #9eabc9; font-size: .83rem; line-height: 1.55; }
+    @media (max-width: 700px) { .game { grid-template-columns: 1fr; } .panel { padding: 18px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>손으로 하는 가위바위보</h1>
+      <p>카메라 앞에서 손 모양을 보여주고 컴퓨터와 한 판!</p>
+    </header>
+    <section class="game">
+      <div class="camera">
+        <div class="screen">
+          <video id="video" playsinline muted></video>
+          <canvas id="overlay"></canvas>
+          <div class="placeholder" id="placeholder"><div><span>📷</span>시작 버튼을 누르면 카메라가 켜져요</div></div>
+        </div>
+        <div class="status" id="status">카메라를 켜고 손을 화면 안에 보여주세요.</div>
+      </div>
+      <aside class="panel">
+        <h2>이번 판</h2>
+        <div class="hands">
+          <div class="choice"><span class="emoji" id="playerEmoji">✋</span><span class="label">나</span></div>
+          <span class="versus">VS</span>
+          <div class="choice"><span class="emoji" id="cpuEmoji">🤖</span><span class="label">컴퓨터</span></div>
+        </div>
+        <div class="result" id="result">준비되면 시작하세요!</div>
+        <p class="score" id="score">나 0승 · 컴퓨터 0승 · 무승부 0</p>
+        <button id="startButton">카메라 시작</button>
+        <p class="hint">손 모양을 약 1초간 유지하면 한 판이 진행돼요.<br>✊ 바위 · ✋ 보 · ✌️ 가위</p>
+      </aside>
+    </section>
+  </main>
+  <script type="module">
+    import { FilesetResolver, HandLandmarker, DrawingUtils } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+    const video = document.querySelector("#video");
+    const canvas = document.querySelector("#overlay");
+    const ctx = canvas.getContext("2d");
+    const button = document.querySelector("#startButton");
+    const status = document.querySelector("#status");
+    const placeholder = document.querySelector("#placeholder");
+    const result = document.querySelector("#result");
+    const playerEmoji = document.querySelector("#playerEmoji");
+    const cpuEmoji = document.querySelector("#cpuEmoji");
+    const scoreText = document.querySelector("#score");
+    const gestureEmoji = { rock: "✊", paper: "✋", scissors: "✌️" };
+    const gestureName = { rock: "바위", paper: "보", scissors: "가위" };
+    let landmarker;
+    let stream;
+    let active = false;
+    let heldGesture = "";
+    let heldSince = 0;
+    let lastRound = 0;
+    let wins = 0, losses = 0, draws = 0;
+
+    function classify(hand) {
+      // 손가락 끝이 각 관절보다 위에 있는지 확인합니다. 영상 좌표는 위쪽이 작은 값입니다.
+      const extended = [8, 12, 16, 20].map((tip, i) => hand[tip].y < hand[[6, 10, 14, 18][i]].y - 0.025);
+      const thumbOpen = Math.hypot(hand[4].x - hand[5].x, hand[4].y - hand[5].y) >
+                        Math.hypot(hand[3].x - hand[5].x, hand[3].y - hand[5].y) * 1.12;
+      const [index, middle, ring, pinky] = extended;
+      if (index && middle && !ring && !pinky) return "scissors";
+      if (index && middle && ring && pinky && thumbOpen) return "paper";
+      if (!index && !middle && !ring && !pinky) return "rock";
+      return "";
+    }
+
+    function playRound(player) {
+      const options = ["rock", "paper", "scissors"];
+      const cpu = options[Math.floor(Math.random() * options.length)];
+      playerEmoji.textContent = gestureEmoji[player];
+      cpuEmoji.textContent = gestureEmoji[cpu];
+      if (player === cpu) { draws++; result.textContent = "비겼어요!"; result.style.color = "#ffe59a"; }
+      else if ((player === "rock" && cpu === "scissors") || (player === "paper" && cpu === "rock") || (player === "scissors" && cpu === "paper")) {
+        wins++; result.textContent = "이겼어요! 🎉"; result.style.color = "#a9f2cd";
+      } else { losses++; result.textContent = "컴퓨터가 이겼어요!"; result.style.color = "#ffadb5"; }
+      scoreText.textContent = `나 ${wins}승 · 컴퓨터 ${losses}승 · 무승부 ${draws}`;
+      lastRound = performance.now();
+      heldGesture = "";
+    }
+
+    async function start() {
+      button.disabled = true;
+      status.textContent = "손 인식 모델을 준비하고 있어요…";
+      try {
+        const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
+        landmarker = await HandLandmarker.createFromOptions(vision, {
+          baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task", delegate: "GPU" },
+          runningMode: "VIDEO", numHands: 1
+        });
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
+        video.srcObject = stream;
+        await video.play();
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        active = true;
+        placeholder.hidden = true;
+        button.textContent = "카메라 끄기";
+        button.disabled = false;
+        status.textContent = "손을 화면 안에 보여주세요.";
+        requestAnimationFrame(detect);
+      } catch (error) {
+        console.error(error);
+        status.textContent = error.name === "NotAllowedError" ? "카메라 권한을 허용한 뒤 다시 시작해주세요." : "카메라 또는 손 인식 모델을 시작하지 못했어요. 인터넷 연결을 확인해주세요.";
+        button.disabled = false;
+      }
+    }
+
+    function stop() {
+      active = false;
+      if (stream) stream.getTracks().forEach(track => track.stop());
+      video.srcObject = null;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      placeholder.hidden = false;
+      button.textContent = "카메라 시작";
+      status.textContent = "카메라를 켜고 손을 화면 안에 보여주세요.";
+    }
+
+    function detect() {
+      if (!active) return;
+      if (video.readyState >= 2) {
+        const prediction = landmarker.detectForVideo(video, performance.now());
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const hands = prediction.landmarks;
+        if (hands.length) {
+          const drawing = new DrawingUtils(ctx);
+          drawing.drawConnectors(hands[0], HandLandmarker.HAND_CONNECTIONS, { color: "#9af0c1", lineWidth: 4 });
+          drawing.drawLandmarks(hands[0], { color: "#fff2a8", lineWidth: 1, radius: 3 });
+          const gesture = classify(hands[0]);
+          if (gesture) {
+            status.textContent = `${gestureName[gesture]} 감지! 그대로 유지해주세요…`;
+            if (gesture !== heldGesture) { heldGesture = gesture; heldSince = performance.now(); }
+            if (performance.now() - heldSince > 900 && performance.now() - lastRound > 1800) playRound(gesture);
+          } else {
+            heldGesture = "";
+            status.textContent = "가위, 바위, 보 중 하나를 보여주세요.";
+          }
+        } else {
+          heldGesture = "";
+          status.textContent = "손을 화면 안에 보여주세요.";
+        }
+      }
+      requestAnimationFrame(detect);
+    }
+
+    button.addEventListener("click", () => active ? stop() : start());
+  </script>
+</body>
+</html>
