@@ -1,0 +1,206 @@
+<!doctype html>
+<!--
+코드 읽는 순서 안내
+
+처음에는 아래 번호의 큰 주석을 찾아 ①→⑦ 순서로 읽으세요.
+함수의 본문을 한 번에 외우기보다 '무엇을 받아 무엇을 만드는가'를 먼저 봅니다.
+
+① 화면 준비: canvas와 WebGL2가 무엇인지 확인
+② GPU 코드: vs의 main() → fs의 main() 읽기
+③ compile(): GPU 코드를 준비하고 program으로 연결하는 과정
+④ attribute(): 정점 위치·색을 GPU로 보내고 읽는 방법을 설정
+⑤ 인덱스와 uniform: 연결 순서와 시간 전달 위치 준비
+⑥ frame(): 한 프레임을 그리는 순서
+⑦ requestAnimationFrame(): frame을 반복해서 애니메이션 만들기
+
+특히 세 함수를 구분하세요.
+  compile(type, source): 셰이더 종류와 문자열 → 컴파일된 셰이더
+  attribute(location, values): 입력 번호와 숫자 배열 → GPU 버퍼 및 읽기 설정
+  frame(milliseconds): 브라우저가 준 시간 → 화면 한 장 그리기와 다음 호출 예약
+
+읽는 순서와 실제 실행 시점은 다릅니다.
+  - 함수 선언은 작업 방법을 정의합니다. 호출해야 본문이 실행됩니다.
+  - vs/fs는 처음에는 문자열일 뿐입니다. 선언 시 GPU가 실행하지 않습니다.
+  - 준비 코드는 처음 한 번 실행됩니다. frame은 화면을 갱신할 때마다 실행됩니다.
+  - drawElements가 그리기를 요청하면 GPU가 셰이더의 main()을 실행합니다.
+  - CPU와 GPU는 따로 동작하므로 그리기 요청과 화면 완성이 같은 순간은 아닙니다.
+-->
+<html lang="ko">
+<!-- UTF-8은 한글을 표시할 문자 인코딩, title은 브라우저 탭 제목입니다. -->
+<meta charset="utf-8">
+<title>삼각형으로 배우는 WebGL2</title>
+<style>
+  /* body: 기본 바깥 여백 제거, 배경·글자색과 글자 정렬 설정 */
+  body { margin: 0; background: #111827; color: white; text-align: center; }
+  canvas { width: min(90vw, 600px); height: auto; }
+  /* min(): 화면 너비의 90%와 600px 중 작은 크기. 표시 크기만 조절합니다. */
+</style>
+<p>정점의 세 가지 색이 안쪽에서 섞입니다. 소스의 주석을 함께 읽어 보세요.</p>
+<canvas id="canvas" width="600" height="600"></canvas>
+<!-- canvas는 그림 영역입니다. width/height는 내부 그림 해상도입니다.
+     CSS의 표시 크기와는 별개이며, id는 JavaScript에서 찾을 이름입니다. -->
+<p id="error" role="alert"></p>
+<!-- 오류가 나면 이 빈 문단에 메시지를 넣습니다. role은 접근성용 의미입니다. -->
+<script>
+// 엄격 모드: 선언하지 않은 변수에 대입하는 등의 실수를 오류로 알려 줍니다.
+'use strict';
+// try 안에서 준비 중 오류가 나면 맨 아래 catch로 이동합니다.
+// 나중에 비동기로 실행되는 frame 내부 오류까지 이 catch가 잡지는 않습니다.
+try {
+  // ① 화면 준비: HTML 요소 → WebGL2 명령을 보낼 도구
+  // getElementById(id): 문서에서 해당 id의 요소 하나를 찾습니다.
+  const canvas = document.getElementById('canvas');
+  // getContext('webgl2'): 이 canvas를 WebGL2로 그릴 컨텍스트를 요청합니다.
+  // gl은 그림 자체가 아니라 GPU 자원과 그리기 상태를 다루는 API 객체입니다.
+  const gl = canvas.getContext('webgl2');
+  // 실패하면 null. !gl로 실패 여부를 검사하고 Error 객체를 만들어 던집니다.
+  if (!gl) throw new Error('WebGL2를 지원하는 브라우저가 필요합니다.');
+
+  // ② GPU 코드: JavaScript가 아니라 GLSL 언어로 작성한 두 문자열
+  // 백틱(`)은 여러 줄 문자열을 만듭니다. const는 변수의 재대입을 막습니다.
+  // 문자열 맨 처음에 #version을 둡니다. GPU에서 실행할 코드입니다.
+  // #version 300 es: WebGL2에서 사용하는 GLSL ES 3.00 버전 선언
+  const vs = `#version 300 es
+  layout(location=0) in vec3 aPos;   // 정점마다 다른 위치
+  layout(location=3) in vec3 aColor; // 정점마다 다른 색
+  uniform float uTime;              // 이번 그리기의 공통 시간
+  out vec3 vColor;                  // GPU가 보간할 값
+  // 버텍스 main: 정점 하나를 처리하는 GPU의 시작 함수입니다.
+  // layout의 번호는 아래 attribute()의 location과 연결됩니다.
+  // vec3=실수 3개, vec4=실수 4개. in은 입력, out은 출력입니다.
+  void main() {
+    vec3 p = aPos;                  // 입력 위치를 지역 변수에 복사
+    // sin(): 라디안 값을 받아 -1~1을 반복합니다. 0.15는 이동 폭입니다.
+    // 동일한 시간으로 세 정점을 이동하므로 삼각형 모양은 유지됩니다.
+    p.x += sin(uTime) * 0.15;       // 모든 정점에 같은 이동량 적용
+    // vec4(p,1.0): (x,y,z,w)를 만듭니다. gl_Position은 정해진 위치 출력입니다.
+    // GPU가 나중에 xyz를 w로 나눠 NDC로 바꿉니다. 여기서는 나눠도 같습니다.
+    gl_Position = vec4(p, 1.0);     // w=1이므로 xyz가 그대로 NDC
+    vColor = aColor;
+  }`;
+
+  const fs = `#version 300 es
+  // 프래그먼트에서 사용할 float의 기본 정밀도를 지정합니다.
+  precision highp float;
+  in vec3 vColor;       // 보간된 색. 꼭짓점 색과 다를 수 있음
+  out vec4 fragColor;
+  // 프래그먼트 main: 삼각형 내부의 색을 계산하는 GPU의 시작 함수입니다.
+  // vColor는 꼭짓점 색 3개를 GPU가 위치에 따라 섞어 만든 값입니다.
+  // 이 예제는 w가 같아 일반적인 가중 평균으로 이해하면 됩니다.
+  void main() {
+    fragColor = vec4(vColor, 1.0); // 알파 1: 불투명
+  }`;
+
+  // ③ compile(type, source): GLSL 문자열 → 컴파일된 셰이더 객체
+  // type은 VERTEX_SHADER 또는 FRAGMENT_SHADER, source는 vs 또는 fs입니다.
+  // 컴파일은 소스의 문법 등을 검사해 실행에 사용할 형태로 준비하는 작업입니다.
+  function compile(type, source) {
+    // createShader: 지정 종류의 빈 셰이더 객체를 만듭니다.
+    const shader = gl.createShader(type);
+    // shaderSource: 빈 셰이더에 소스 문자열을 등록합니다.
+    gl.shaderSource(shader, source);
+    // compileShader: 등록된 문자열을 컴파일하도록 요청합니다.
+    gl.compileShader(shader);
+    // getShaderParameter: 지정한 상태 조회. COMPILE_STATUS는 성공 여부입니다.
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+      // getShaderInfoLog: 컴파일 진단 메시지. throw하면 아래 return을 건너뜁니다.
+      throw new Error(gl.getShaderInfoLog(shader));
+    }
+    // 성공한 셰이더를 호출한 곳에 돌려줍니다.
+    return shader;
+  }
+  // createProgram: 두 셰이더를 묶어 사용할 빈 프로그램 객체를 만듭니다.
+  const program = gl.createProgram();
+  // 먼저 compile(...)이 실행됩니다. 반환된 셰이더를 attachShader로 붙입니다.
+  gl.attachShader(program, compile(gl.VERTEX_SHADER, vs));
+  gl.attachShader(program, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(program); // 2. 두 셰이더의 입출력을 연결합니다.
+  // 링크는 버텍스 out과 프래그먼트 in의 이름·자료형 등이 맞는지도 검사합니다.
+  // getProgramParameter(..., LINK_STATUS): 프로그램 연결의 성공 여부 조회
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    // getProgramInfoLog: 프로그램 링크 실패 원인을 가져옵니다.
+    throw new Error(gl.getProgramInfoLog(program));
+  }
+
+  // ④ 정점 데이터: GPU에 숫자를 보내고 정점 단위로 읽는 규칙을 설정
+  // VAO는 숫자 자체를 보관하는 버퍼가 아니라 읽기 설정을 묶는 객체입니다.
+  // createVertexArray(): 빈 VAO 생성
+  const vao = gl.createVertexArray();
+  // bindVertexArray(): 이후 정점 설정을 기록할 VAO를 선택합니다.
+  gl.bindVertexArray(vao);
+  // attribute(location, values): 이 예제에서 직접 만든 편의 함수입니다.
+  // 위치와 색이 모두 vec3여서 실수 3개씩 읽는 공통 작업을 묶었습니다.
+  // 반환값은 없습니다. GPU 버퍼 생성과 현재 VAO 설정이 함수의 결과입니다.
+  function attribute(location, values) {
+    // createBuffer(): GPU에서 사용할 빈 데이터 버퍼를 만듭니다.
+    const buffer = gl.createBuffer();
+    // bindBuffer(): ARRAY_BUFFER 작업 대상으로 buffer를 선택합니다.
+    // bind는 데이터를 복사하는 작업이 아니라 '이 대상을 사용하겠다'는 선택입니다.
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    // Float32Array: JavaScript 숫자 배열을 32비트 실수 배열로 바꿉니다.
+    // bufferData: 현재 선택한 버퍼에 실제 데이터를 올립니다.
+    // STATIC_DRAW는 자주 수정하지 않을 데이터라는 사용 힌트입니다.
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(values), gl.STATIC_DRAW);
+    // 해당 입력 번호가 상수 대신 버퍼에서 값을 읽도록 켭니다.
+    gl.enableVertexAttribArray(location);
+    // vertexAttribPointer: 현재 ARRAY_BUFFER를 어떤 형식으로 읽을지 VAO에 기록
+    // location: 셰이더 입력 번호 / 3: 성분 개수 / FLOAT: 성분 자료형
+    // false: 정수 데이터를 0~1 등으로 정규화하지 않음(여기서는 실수라 영향 없음)
+    // 첫 0: stride, 0이면 데이터가 빈틈없이 이어짐(여기서는 정점당 12바이트)
+    // 끝 0: 버퍼의 첫 바이트부터 읽기. stride와 offset은 바이트 단위입니다.
+    gl.vertexAttribPointer(location, 3, gl.FLOAT, false, 0, 0);
+  }
+  // 입력 0번(aPos): 왼쪽 아래 / 오른쪽 아래 / 위쪽 정점의 xyz
+  attribute(0, [-0.6,-0.5,0,  0.6,-0.5,0,  0,0.7,0]); // 위치 3개
+  // 입력 3번(aColor): 같은 정점 순서로 빨강 / 초록 / 파랑의 rgb
+  attribute(3, [1,0,0,  0,1,0,  0,0,1]);              // 색 3개
+
+  // ⑤ 인덱스와 시간 입력 준비
+  // 정점 데이터는 '무엇', 인덱스는 '어떤 순서로 연결할지'를 담습니다.
+  const indexBuffer = gl.createBuffer();
+  // ELEMENT_ARRAY_BUFFER는 정점 번호를 담는 버퍼입니다. 연결은 VAO에 기록됩니다.
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+  // Uint16Array: 부호 없는 16비트 정수 배열. [0,1,2]는 삼각형 하나입니다.
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array([0,1,2]), gl.STATIC_DRAW);
+  // getUniformLocation: 이 프로그램에서 uTime 값을 설정할 때 사용할 위치를 찾습니다.
+  // 위치 조회는 한 번만 하고 프레임마다 재사용합니다. 값은 아직 보내지 않았습니다.
+  const timeLocation = gl.getUniformLocation(program, 'uTime');
+
+  // ⑥ frame(milliseconds): 화면 한 장을 준비하고 그리기를 요청하는 함수
+  // milliseconds는 requestAnimationFrame이 전달하는 시간값입니다.
+  // 이전 프레임과의 시간 차이가 아니라 브라우저 시간 원점 기준의 누적 시간입니다.
+  function frame(milliseconds) {
+    // viewport(x,y,width,height): NDC를 캔버스 픽셀 영역으로 옮길 범위를 정합니다.
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    // clearColor(r,g,b,a): 배경을 지울 색을 지정할 뿐 아직 지우지는 않습니다.
+    gl.clearColor(0.03, 0.05, 0.1, 1);
+    // clear(mask): 지정한 버퍼를 실제로 초기화합니다. 이전 삼각형의 잔상을 없앱니다.
+    gl.clear(gl.COLOR_BUFFER_BIT); // 삼각형 하나라 깊이 테스트는 생략
+    // useProgram: 다음 그리기와 uniform 설정에 사용할 프로그램을 선택합니다.
+    gl.useProgram(program);       // uniform을 넣기 전에 선택
+    // uniform1f: 해당 위치에 실수 1개 전달. 셰이더의 uTime에 들어갑니다.
+    gl.uniform1f(timeLocation, milliseconds / 1000); // 밀리초→초
+    // 준비했던 정점 입력 규칙과 인덱스 버퍼 연결을 다시 선택합니다.
+    gl.bindVertexArray(vao);
+    // drawElements(mode,count,type,offset): 현재 프로그램과 VAO로 그리기 요청
+    // TRIANGLES: 번호 3개씩 삼각형 / 3: 읽을 인덱스 개수
+    // UNSIGNED_SHORT: Uint16Array와 같은 16비트 정수 / 0: 첫 바이트부터 읽기
+    // 이 요청으로 정점 처리 → 삼각형 조립 → 보간 → 프래그먼트 색 계산이 이어집니다.
+    gl.drawElements(gl.TRIANGLES, 3, gl.UNSIGNED_SHORT, 0);
+    // 다음 호출을 예약해야 움직임이 계속됩니다. 현재 함수를 즉시 다시 부르지 않습니다.
+    requestAnimationFrame(frame); // 다음 화면 갱신 때 다시 호출
+  }
+  // ⑦ 반복 시작: 함수를 전달해 최초 실행을 예약합니다.
+  // frame()이 아니라 frame을 넘기는 이유는 브라우저가 나중에 호출해야 하기 때문입니다.
+  // requestAnimationFrame은 한 번만 예약하므로 frame 안에서 계속 재예약합니다.
+  // 호출 빈도는 화면 갱신과 탭 상태에 따라 달라지며 반드시 초당 60회는 아닙니다.
+  requestAnimationFrame(frame);
+} catch (error) {
+  // 준비 중 throw한 오류를 받아 화면과 개발자 도구에 표시합니다.
+  // textContent는 문자열을 HTML로 해석하지 않고 글자로 넣습니다.
+  document.getElementById('error').textContent = error.message;
+  // console.error: 브라우저 개발자 도구의 콘솔에 오류를 출력합니다.
+  console.error(error); // 셰이더 오류의 줄 번호도 개발자 도구에서 확인
+}
+</script>
+</html>
