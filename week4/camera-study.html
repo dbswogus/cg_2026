@@ -1,0 +1,269 @@
+<!doctype html>
+<!--
+4주차 카메라·투영 학습용 예제 (외부 라이브러리 없음)
+
+읽는 순서
+  ① 행렬 도우미: lookAt / perspective / ortho 를 직접 만든다 (강의 2-3, 4-1, 5-1절 공식 그대로)
+  ② 셰이더: gl_Position = uProj * uView * uModel * 위치
+  ③ 정육면체 데이터: 같은 크기 정육면체 A·B·C를 깊이만 다르게 놓는다
+  ④ frame(): 슬라이더 값으로 V와 P를 만들고, 세 정육면체를 그린다
+  ⑤ 오른쪽 숫자판: 점 A의 중심이 월드 → 뷰 → 클립 → NDC 로 바뀌는 과정을 보여 준다
+
+해 볼 것
+  - 원근 ↔ 직교를 바꿔 먼 C의 크기가 어떻게 달라지는지 본다
+  - 시야각(FOV)을 키우면 물체가 작아지는지, 카메라 z를 줄이면(전진) 어떻게 다른지 비교한다
+  - near를 키우거나 far를 줄여 어느 정육면체부터 잘리는지 본다
+-->
+<html lang="ko"> <!-- 문서 언어: 한국어 -->
+<meta charset="utf-8"> <!-- 한글이 깨지지 않도록 UTF-8 인코딩 사용 -->
+<meta name="viewport" content="width=device-width, initial-scale=1"> <!-- 휴대폰에서도 화면 폭에 맞춤 -->
+<title>카메라와 투영 실험</title> <!-- 브라우저 탭에 표시될 제목 -->
+<style>
+  body { margin: 0; background: #111827; color: #e5e7eb; font-family: sans-serif; } /* 어두운 배경, 밝은 글자 */
+  main { display: flex; flex-wrap: wrap; gap: 16px; padding: 16px; } /* 캔버스와 조작판을 나란히, 좁으면 줄바꿈 */
+  canvas { width: min(100%, 640px); aspect-ratio: 4 / 3; background: #000; } /* 표시 크기: 최대 640px, 4:3 비율 */
+  #panel { flex: 1; min-width: 260px; } /* 조작판은 남은 폭을 사용, 최소 260px */
+  label { display: block; margin: 6px 0; } /* 슬라이더마다 한 줄씩 */
+  input[type=range] { width: 100%; } /* 슬라이더를 조작판 폭에 맞춤 */
+  pre { background: #1f2937; padding: 8px; font-size: 12px; overflow-x: auto; } /* 숫자판 스타일 */
+</style>
+<main> <!-- 화면 전체 배치 영역 -->
+  <canvas id="canvas"></canvas> <!-- WebGL이 그림을 그릴 영역 -->
+  <div id="panel"> <!-- 오른쪽 조작판 -->
+    <label><input type="checkbox" id="ortho"> 직교 투영 사용 (해제하면 원근 투영)</label> <!-- 투영 종류 선택 -->
+    <label>카메라 x: <span id="exV"></span><input type="range" id="ex" min="-6" max="6" step="0.1" value="0"></label> <!-- eye.x -->
+    <label>카메라 y: <span id="eyV"></span><input type="range" id="ey" min="-4" max="8" step="0.1" value="2"></label> <!-- eye.y -->
+    <label>카메라 z: <span id="ezV"></span><input type="range" id="ez" min="1" max="15" step="0.1" value="6"></label> <!-- eye.z -->
+    <label>시야각 FOV(도): <span id="fovV"></span><input type="range" id="fov" min="10" max="120" step="1" value="60"></label> <!-- 원근 전용 -->
+    <label>직교 세로 반높이: <span id="hhV"></span><input type="range" id="hh" min="1" max="10" step="0.1" value="4"></label> <!-- 직교 전용 -->
+    <label>near: <span id="nearV"></span><input type="range" id="near" min="0.1" max="10" step="0.1" value="0.1"></label> <!-- 앞쪽 자르는 면 -->
+    <label>far: <span id="farV"></span><input type="range" id="far" min="2" max="30" step="0.5" value="30"></label> <!-- 뒤쪽 자르는 면 -->
+    <pre id="info"></pre> <!-- 행렬과 좌표 변환 결과를 글자로 보여 줄 곳 -->
+  </div> <!-- 조작판 끝 -->
+</main> <!-- 배치 영역 끝 -->
+<script>
+'use strict'; // 실수(선언 안 한 변수 등)를 오류로 알려 주는 엄격 모드
+
+// ───────── ① 행렬 도우미 ─────────
+// WebGL은 4×4 행렬을 "열 우선(column-major)"으로 16칸 배열에 저장합니다.
+// 즉 m[열*4 + 행] 위치에 (행, 열) 원소가 들어갑니다. 그래서 이동량(4번째 열)은 m[12], m[13], m[14]에 있습니다.
+
+function identity() { // 아무 변환도 하지 않는 단위 행렬을 만든다
+  const m = new Float32Array(16); // 0으로 채워진 16칸 배열
+  m[0] = m[5] = m[10] = m[15] = 1; // 대각선만 1
+  return m; // 완성된 행렬 반환
+}
+
+function translation(x, y, z) { // 물체를 (x, y, z)만큼 옮기는 모델 행렬
+  const m = identity(); // 단위 행렬에서 시작
+  m[12] = x; m[13] = y; m[14] = z; // 4번째 열에 이동량을 넣는다
+  return m; // 완성된 이동 행렬
+}
+
+function sub(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; } // 벡터 빼기 a − b
+function dot(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; } // 내적: 같은 방향이면 크고, 수직이면 0
+function cross(a, b) { // 외적: a와 b 모두에 수직인 벡터
+  return [a[1] * b[2] - a[2] * b[1], // x 성분
+          a[2] * b[0] - a[0] * b[2], // y 성분
+          a[0] * b[1] - a[1] * b[0]]; // z 성분
+}
+function normalize(v) { // 방향은 유지하고 길이를 1로 맞춘다
+  const len = Math.hypot(v[0], v[1], v[2]); // 벡터의 길이
+  return [v[0] / len, v[1] / len, v[2] / len]; // 각 성분을 길이로 나눔
+}
+
+function lookAt(eye, target, up) { // 강의 2-3절: eye에서 target을 보는 뷰 행렬 V
+  const z = normalize(sub(eye, target)); // 카메라 z축: target → eye 방향 (카메라는 −z를 본다)
+  const x = normalize(cross(up, z)); // 카메라 x축(오른쪽): up과 z에 모두 수직
+  const y = cross(z, x); // 카메라 y축(위쪽): z와 x에 수직. 둘 다 길이 1이라 이미 길이 1
+  const m = identity(); // 결과를 담을 행렬
+  m[0] = x[0]; m[4] = x[1]; m[8] = x[2]; // 1행 = 카메라 x축
+  m[1] = y[0]; m[5] = y[1]; m[9] = y[2]; // 2행 = 카메라 y축
+  m[2] = z[0]; m[6] = z[1]; m[10] = z[2]; // 3행 = 카메라 z축
+  m[12] = -dot(x, eye); // 1행 4열: 카메라 위치를 빼는 효과(x축 방향 성분)
+  m[13] = -dot(y, eye); // 2행 4열: 카메라 위치를 빼는 효과(y축 방향 성분)
+  m[14] = -dot(z, eye); // 3행 4열: 카메라 위치를 빼는 효과(z축 방향 성분)
+  return m; // 이 행렬을 곱하면 월드 좌표가 카메라 기준 좌표가 된다
+}
+
+function perspective(fovy, aspect, near, far) { // 강의 5-1절: 원근 투영 행렬
+  const s = 1 / Math.tan(fovy / 2); // 시야각이 넓을수록 s가 작아져 물체가 작게 보인다
+  const m = new Float32Array(16); // 0으로 시작 (대부분 칸이 0)
+  m[0] = s / aspect; // x 배율: 가로가 긴 화면이면 x를 더 줄여 찌그러짐 방지
+  m[5] = s; // y 배율
+  m[10] = -(far + near) / (far - near); // 깊이를 near→−1, far→+1 로 보내기 위한 값
+  m[11] = -1; // 4행 3열: w_clip = −z_view 가 되게 한다 → 나중에 깊이로 나누는 원근 나눗셈
+  m[14] = -2 * far * near / (far - near); // 3행 4열: 깊이 매핑의 나머지 항
+  return m; // 4행 4열은 0 그대로
+}
+
+function ortho(l, r, b, t, near, far) { // 강의 4-1절: 직교 투영 행렬
+  const m = identity(); // 마지막 행이 [0 0 0 1] → w_clip = 1 (나눗셈해도 그대로)
+  m[0] = 2 / (r - l); // x 범위 [l, r]의 폭을 2(−1~1)로 맞추는 배율
+  m[5] = 2 / (t - b); // y 범위 [b, t]의 높이를 2로 맞추는 배율
+  m[10] = -2 / (far - near); // z 범위 [−far, −near]를 2로 맞추는 배율 (부호 반전 포함)
+  m[12] = -(r + l) / (r - l); // x 범위의 중심을 0으로 옮김
+  m[13] = -(t + b) / (t - b); // y 범위의 중심을 0으로 옮김
+  m[14] = -(far + near) / (far - near); // z 범위의 중심을 0으로 옮김
+  return m; // x·y 계산에 깊이가 들어가지 않으므로 멀어도 크기가 같다
+}
+
+function mulVec(m, v) { // 행렬 × 4차원 벡터 [x, y, z, w]
+  const out = [0, 0, 0, 0]; // 결과 벡터
+  for (let row = 0; row < 4; row++) { // 결과의 각 성분(행)마다
+    for (let col = 0; col < 4; col++) { // 행렬의 그 행과 벡터를 내적
+      out[row] += m[col * 4 + row] * v[col]; // 열 우선 저장이므로 m[col*4+row]
+    }
+  }
+  return out; // 변환된 벡터
+}
+
+// ───────── ② 셰이더 (GPU에서 실행되는 코드) ─────────
+const vsSource = `#version 300 es
+layout(location = 0) in vec3 aPos;    // 정점 위치 (모델 좌표)
+layout(location = 1) in vec3 aNormal; // 정점 법선 (면이 향하는 방향)
+uniform mat4 uModel;                  // 모델 행렬 M: 모델 → 월드
+uniform mat4 uView;                   // 뷰 행렬 V: 월드 → 카메라(뷰)
+uniform mat4 uProj;                   // 투영 행렬 P: 뷰 → 클립
+out vec3 vNormal;                     // 프래그먼트 셰이더로 넘길 법선
+void main() {
+  vNormal = aNormal;                  // 정육면체는 회전하지 않으므로 법선을 그대로 넘김
+  gl_Position = uProj * uView * uModel * vec4(aPos, 1.0); // 오른쪽 행렬부터 적용. 결과는 클립 좌표(w로 직접 나누지 않음!)
+}`; // 버텍스 셰이더 끝
+
+const fsSource = `#version 300 es
+precision highp float;                // 실수 계산 정밀도
+in vec3 vNormal;                      // 버텍스 셰이더에서 보간되어 들어온 법선
+uniform vec3 uColor;                  // 정육면체의 기본 색
+out vec4 fragColor;                   // 최종 픽셀 색
+void main() {
+  vec3 light = normalize(vec3(0.4, 0.8, 0.6));             // 고정된 빛의 방향
+  float bright = 0.35 + 0.65 * max(dot(normalize(vNormal), light), 0.0); // 빛을 향한 면일수록 밝게
+  fragColor = vec4(uColor * bright, 1.0);                  // 색 × 밝기, 불투명
+}`; // 프래그먼트 셰이더 끝
+
+const canvas = document.getElementById('canvas'); // 캔버스 요소 가져오기
+const gl = canvas.getContext('webgl2'); // WebGL2 그리기 도구 얻기
+if (!gl) throw new Error('WebGL2를 지원하지 않는 브라우저입니다.'); // 지원 안 하면 중단
+
+function compile(type, source) { // 셰이더 문자열을 GPU용으로 컴파일
+  const shader = gl.createShader(type); // 빈 셰이더 객체
+  gl.shaderSource(shader, source); // 소스 코드 넣기
+  gl.compileShader(shader); // 컴파일
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader)); // 실패 시 오류 표시
+  return shader; // 컴파일된 셰이더
+}
+const program = gl.createProgram(); // 셰이더 두 개를 묶을 프로그램
+gl.attachShader(program, compile(gl.VERTEX_SHADER, vsSource)); // 버텍스 셰이더 붙이기
+gl.attachShader(program, compile(gl.FRAGMENT_SHADER, fsSource)); // 프래그먼트 셰이더 붙이기
+gl.linkProgram(program); // 두 셰이더의 입출력 연결
+if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program)); // 연결 실패 확인
+
+// ───────── ③ 정육면체 데이터 ─────────
+// 한 변이 1인 정육면체: 면 6개 × 삼각형 2개 × 정점 3개 = 36개 정점
+const faces = [ // 각 면: [법선, 면 위의 두 방향 u, v]
+  [[ 1, 0, 0], [0, 1, 0], [0, 0, 1]], // 오른쪽 면 (+x)
+  [[-1, 0, 0], [0, 0, 1], [0, 1, 0]], // 왼쪽 면 (−x)
+  [[ 0, 1, 0], [0, 0, 1], [1, 0, 0]], // 윗면 (+y)
+  [[ 0,-1, 0], [1, 0, 0], [0, 0, 1]], // 아랫면 (−y)
+  [[ 0, 0, 1], [1, 0, 0], [0, 1, 0]], // 앞면 (+z)
+  [[ 0, 0,-1], [0, 1, 0], [1, 0, 0]], // 뒷면 (−z)
+]; // 면 정의 끝
+const positions = []; // 정점 위치를 모을 배열
+const normals = []; // 정점 법선을 모을 배열
+for (const [n, u, v] of faces) { // 면마다
+  const corner = (a, b) => [0, 1, 2].map(i => n[i] * 0.5 + u[i] * a + v[i] * b); // 면 중심(n*0.5)에서 u·v 방향으로 ±0.5
+  const quad = [corner(-0.5, -0.5), corner(0.5, -0.5), corner(0.5, 0.5), corner(-0.5, 0.5)]; // 사각형 꼭짓점 4개
+  for (const i of [0, 1, 2, 0, 2, 3]) { // 사각형 = 삼각형 2개 (0-1-2, 0-2-3)
+    positions.push(...quad[i]); // 위치 x, y, z 추가
+    normals.push(...n); // 같은 면의 정점은 같은 법선
+  }
+}
+const vao = gl.createVertexArray(); // 정점 읽기 설정을 기억할 VAO
+gl.bindVertexArray(vao); // 지금부터의 설정을 이 VAO에 기록
+function attribute(location, values) { // 숫자 배열을 GPU 버퍼에 올리고 읽는 방법 설정
+  const buffer = gl.createBuffer(); // GPU 메모리 공간
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer); // 작업 대상으로 선택
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(values), gl.STATIC_DRAW); // 데이터 복사
+  gl.enableVertexAttribArray(location); // 이 입력 번호 사용
+  gl.vertexAttribPointer(location, 3, gl.FLOAT, false, 0, 0); // 실수 3개씩 읽기
+}
+attribute(0, positions); // location 0 = aPos
+attribute(1, normals); // location 1 = aNormal
+
+const uModel = gl.getUniformLocation(program, 'uModel'); // 셰이더 변수 위치: 모델 행렬
+const uView = gl.getUniformLocation(program, 'uView'); // 셰이더 변수 위치: 뷰 행렬
+const uProj = gl.getUniformLocation(program, 'uProj'); // 셰이더 변수 위치: 투영 행렬
+const uColor = gl.getUniformLocation(program, 'uColor'); // 셰이더 변수 위치: 색
+
+// 같은 크기의 정육면체 세 개. x를 조금씩 옮겨 겹치지 않게 하고, z(깊이)만 크게 다르게 둔다.
+const cubes = [ // 이름, 월드 위치, 색
+  { name: 'A', pos: [-1.5, 0, 0], color: [0.95, 0.35, 0.35] }, // A: 가까움, 빨강
+  { name: 'B', pos: [0, 0, -5], color: [0.35, 0.85, 0.45] }, // B: 중간, 초록
+  { name: 'C', pos: [1.5, 0, -10], color: [0.4, 0.55, 1.0] }, // C: 멀리, 파랑
+]; // 정육면체 목록 끝
+const target = [0, 0, -5]; // 카메라가 바라볼 점: 가운데 정육면체 B
+const up = [0, 1, 0]; // 위쪽 기준 방향 (y-up)
+
+const $ = id => document.getElementById(id); // 요소를 id로 찾는 짧은 함수
+const fmt = v => v.toFixed(2).padStart(6); // 숫자를 소수 둘째 자리, 폭 6칸으로
+function matText(m) { // 행렬을 사람이 읽는 행 단위 글자로
+  let s = ''; // 결과 문자열
+  for (let r = 0; r < 4; r++) s += [0, 1, 2, 3].map(c => fmt(m[c * 4 + r])).join(' ') + '\n'; // 한 행씩
+  return s; // 완성된 글자
+}
+
+// ───────── ④ 한 프레임 그리기 ─────────
+function frame() {
+  const dpr = window.devicePixelRatio || 1; // 고해상도 화면 배율
+  const w = Math.round(canvas.clientWidth * dpr); // 실제 픽셀 폭
+  const h = Math.round(canvas.clientHeight * dpr); // 실제 픽셀 높이
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; } // 크기가 바뀌었을 때만 맞춤
+  const aspect = canvas.width / canvas.height; // 화면 비율 (가로 / 세로)
+
+  const val = id => parseFloat($(id).value); // 슬라이더 값을 숫자로 읽기
+  const eye = [val('ex'), val('ey'), val('ez')]; // 카메라 위치
+  const fovDeg = val('fov'); // 시야각(도)
+  const halfH = val('hh'); // 직교 투영의 세로 반높이
+  const near = val('near'); // near 거리 (−z 방향으로 잰 양수)
+  const far = Math.max(val('far'), near + 0.1); // far는 near보다 커야 한다
+  const useOrtho = $('ortho').checked; // 직교 투영 여부
+  for (const id of ['ex', 'ey', 'ez', 'fov', 'hh', 'near', 'far']) $(id + 'V').textContent = $(id).value; // 현재 값 표시
+
+  const view = lookAt(eye, target, up); // 뷰 행렬 V = (카메라 배치 행렬 C)의 역행렬
+  const proj = useOrtho // 투영 행렬 P 선택
+    ? ortho(-halfH * aspect, halfH * aspect, -halfH, halfH, near, far) // 가로 범위 = 세로 범위 × aspect → 찌그러짐 없음
+    : perspective(fovDeg * Math.PI / 180, aspect, near, far); // 도 → 라디안 변환 후 전달
+
+  gl.viewport(0, 0, canvas.width, canvas.height); // NDC를 캔버스 전체 픽셀로 옮기는 뷰포트 변환
+  gl.clearColor(0.05, 0.07, 0.12, 1); // 배경색
+  gl.enable(gl.DEPTH_TEST); // 가까운 면이 먼 면을 가리도록 깊이 테스트
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); // 색과 깊이 버퍼 초기화
+  gl.useProgram(program); // 우리 셰이더 사용
+  gl.uniformMatrix4fv(uView, false, view); // V 전달 (false = 전치하지 않음)
+  gl.uniformMatrix4fv(uProj, false, proj); // P 전달
+  gl.bindVertexArray(vao); // 정육면체 데이터 선택
+  for (const c of cubes) { // 정육면체마다
+    gl.uniformMatrix4fv(uModel, false, translation(...c.pos)); // M: 그 위치로 옮김
+    gl.uniform3fv(uColor, c.color); // 색 지정
+    gl.drawArrays(gl.TRIANGLES, 0, 36); // 정점 36개 = 삼각형 12개 그리기
+  }
+
+  // ───────── ⑤ 점 하나의 좌표 변화 추적 ─────────
+  let text = `뷰 행렬 V (eye → target 기준)\n${matText(view)}\n`; // V를 글자로
+  text += `투영 행렬 P (${useOrtho ? '직교' : '원근'})\n${matText(proj)}\n`; // P를 글자로
+  for (const c of cubes) { // 정육면체 중심점마다
+    const pv = mulVec(view, [...c.pos, 1]); // 월드 → 뷰 좌표 (카메라 앞이면 z가 음수)
+    const pc = mulVec(proj, pv); // 뷰 → 클립 좌표 (x, y, z, w)
+    const inside = [0, 1, 2].every(i => Math.abs(pc[i]) <= pc[3]); // 클리핑 조건: −w ≤ x,y,z ≤ w
+    const ndc = pc.slice(0, 3).map(v => v / pc[3]); // 원근 나눗셈: x,y,z를 w로 나눔
+    text += `${c.name} 중심 뷰  (${pv.slice(0, 3).map(fmt)})\n`; // 뷰 좌표 출력
+    text += `   클립 (${pc.map(fmt)})\n`; // 클립 좌표 출력 (w 포함)
+    text += `   NDC  (${ndc.map(fmt)}) ${inside ? '보임' : '잘림/밖'}\n`; // NDC와 보임 여부
+  }
+  $('info').textContent = text; // 숫자판에 표시
+  requestAnimationFrame(frame); // 다음 화면 갱신 때 다시 그리기
+}
+requestAnimationFrame(frame); // 첫 프레임 시작
+</script>
+</html>
