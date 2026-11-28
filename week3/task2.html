@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>3주차 실습 1 — 출발점</title>
+<title>3주차 실습 2 — 수박 행성과 파도 바다 행성</title>
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0f16; }
   canvas { display: block; width: 100vw; height: 100vh; }
@@ -161,7 +161,7 @@ uniform mat4 uViewProj; // 카메라가 어디 있고 어느 방향을 보고 �
 
 out vec3 vColor;                      // 프래그먼트 셰이더로 넘길 값
 out vec3 vNormal;
-out vec3 vSurf;                       // 정점의 세계 좌표 (빛 계산용)
+out vec3 vSurf;                       // 물체 기준 법선 (무늬 계산용, 돌리기 전 값)
 
 void main() {
   vColor  = aColor;
@@ -180,233 +180,69 @@ void main() {
    3. 프래그먼트 셰이더 — 픽셀 하나마다 한 번씩 실행됩니다
    ══════════════════════════════════════════════════════════════════════════ */
 const FS_SOURCE = `#version 300 es
-precision highp float;                // 실수 정밀도 선언 — 여기서는 필수입니다
+precision highp float;                // 실수 정밀도 선언 — 프래그먼트 셰이더에는 필수
 
-in vec3 vColor;
-in vec3 vNormal;
-in vec3 vSurf;
+in vec3 vColor;                       // 정점 색 (이번에는 쓰지 않음. 색은 아래에서 계산으로 만든다)
+in vec3 vNormal;                      // 세계 기준 법선 — 빛 계산에 쓴다 (행성이 돌면 같이 돈다)
+in vec3 vSurf;                        // 물체 기준 법선 — 무늬 계산에 쓴다 (돌리기 전 값이라 무늬가 표면에 붙어 있다)
 
-uniform float uTime;
+uniform float uTime;                  // 초 단위 시간 — 물결을 움직이는 데 쓴다
+uniform int uPlanet;                  // 어떤 행성인지: 0 = 수박 행성, 1 = 파도 바다 행성
 
-out vec4 fragColor;
+out vec4 fragColor;                   // 이 픽셀의 최종 색
+
+const float PI = 3.14159265;          // 원주율
 
 void main() {
+  // ── 공통 준비 ───────────────────────────────────────────────
+  vec3 N = normalize(vNormal);                    // 보간되면 길이가 1이 아니게 되므로 다시 1로 맞춘다
+  vec3 S = normalize(vSurf);                      // 구 위의 "이 점의 방향" = 표면 위치 (물체 기준)
+  vec3 L = normalize(vec3(1.0, 0.35, -0.3));      // 빛이 오는 쪽 방향 (오른쪽 뒤의 태양 → 왼쪽에 밤이 보인다)
+  float diff = max(dot(N, L), 0.0);               // 3주차 7절: cosθ. 빛을 등진 쪽은 0 → 밤
 
-    // =========================================================
-    // 1. 기본 설정
-    // =========================================================
+  float lat = S.y;                                // 위도: -1(남극) ~ 0(적도) ~ 1(북극)
+  float lon = atan(S.z, S.x);                     // 경도: -π ~ π (구를 한 바퀴 도는 각도)
 
-    // 빛 계산용
-    vec3 N = normalize(vNormal);
+  vec3 albedo;                                    // 빛을 받기 전의 표면 색 (아래에서 행성마다 정한다)
 
-    // 행성 표면의 위치
-    vec3 S = normalize(vSurf);
+  if (uPlanet == 0) {
+    // ════════ 수박 행성 ════════
+    // ① 세로 줄무늬: 경도(lon)에 sin 을 걸면 극에서 극으로 이어지는 줄이 생긴다.
+    //    lon 이 한 바퀴(2π) 도는 동안 sin(lon*8) 은 8번 오르내리므로 줄이 8개.
+    // ② 구불거림: 위도에 따라 줄을 조금씩 옆으로 민다. sin(lat*6) 이 -1~1 로 바뀌며
+    //    줄이 좌우로 흔들려 진짜 수박처럼 지그재그가 된다.
+    float stripe = sin(lon * 8.0 + sin(lat * 6.0) * 0.6);   // -1 ~ 1 사이 값
+    // ③ stripe 가 0.2 보다 작으면 연두, 0.6 보다 크면 진초록, 그 사이는 부드럽게 섞는다.
+    float dark = smoothstep(0.2, 0.6, stripe);              // 0(연두) ~ 1(진초록)
+    vec3 lightGreen = vec3(0.50, 0.78, 0.32);               // 수박의 밝은 바탕색
+    vec3 darkGreen  = vec3(0.07, 0.30, 0.10);               // 수박의 진한 줄무늬색
+    albedo = mix(lightGreen, darkGreen, dark);              // dark 비율만큼 두 색을 섞는다
+    // ④ 꼭지: 북극 아주 가까운 곳(lat 0.97 이상)만 갈색으로 칠한다.
+    float stem = smoothstep(0.965, 0.985, lat);             // 북극 근처에서만 0 → 1
+    albedo = mix(albedo, vec3(0.40, 0.26, 0.12), stem);     // 갈색 꼭지
+  } else {
+    // ════════ 파도 바다 행성 ════════
+    // ① 물방울이 떨어진 한 점(C)을 정한다. 표면의 모든 점은 이 점까지의 거리 d 를 가진다.
+    vec3 C = normalize(vec3(1.0, 0.3, 0.0));                // 물결의 중심 (물체 기준 방향)
+    float d = distance(S, C);                                // 0(중심) ~ 2(정반대편)
+    // ② 동심원 물결: 거리 d 에 sin 을 걸면 같은 거리끼리 같은 값 → 원 모양 줄.
+    //    여기서 uTime 을 빼면 시간이 갈수록 같은 값이 더 먼 거리에서 나오므로
+    //    물결이 바깥으로 퍼져 나간다.
+    float wave = sin(d * 16.0 - uTime * 3.0);                // -1 ~ 1 (16: 숫자가 클수록 물결이 촘촘)
+    // ③ 중심에서 멀어질수록 물결이 약해지게 한다 (중심 d=0 에서 1, 정반대편 d=2 에서 0.4).
+    //    완전히 0 으로 만들지 않아서 행성 어느 쪽에서 봐도 물결이 보인다.
+    float fade = 1.0 - 0.6 * smoothstep(0.0, 2.0, d);       // 1 ~ 0.4
+    vec3 deepSea  = vec3(0.01, 0.07, 0.28);                 // 깊은 바다색 (물결의 골)
+    vec3 lightSea = vec3(0.20, 0.62, 0.90);                 // 밝은 물결색 (물결의 마루)
+    albedo = mix(deepSea, lightSea, 0.5 + 0.5 * wave * fade); // 물결 마루는 밝게, 골은 어둡게
+    // ④ 물결 꼭대기(wave 가 거의 1)에만 하얀 거품을 얹는다.
+    float foam = smoothstep(0.85, 1.0, wave) * fade;        // 마루 근처에서만 0 → 1
+    albedo = mix(albedo, vec3(0.92, 0.96, 1.0), foam * 0.8); // 흰 거품을 80% 세기로
+  }
 
-    // 빛의 방향
-    vec3 L = normalize(vec3(0.8, 0.32, 0.5));
-
-    // 빛의 세기
-    float diff = max(dot(N, L), 0.0);
-
-
-    // =========================================================
-    // 2. 행성 기본 색
-    // =========================================================
-
-    vec3 planetColor = vec3(0.20, 0.35, 0.55);
-
-    vec3 albedo = planetColor;
-
-
-    // =========================================================
-    // 3. 왼쪽 눈
-    // =========================================================
-
-    // 왼쪽 눈의 위치
-    //
-    // x = -0.35 → 왼쪽
-    // y =  0.25 → 위쪽
-    // z =  1.0  → 정면
-    //
-    vec3 leftEye = normalize(
-        vec3(-0.35, 0.25, 1.0)
-    );
-
-
-    // 현재 표면 위치 S가
-    // 왼쪽 눈 중심에서 얼마나 떨어져 있는지 계산
-    float leftDist = distance(S, leftEye);
-
-
-    // 거리가 가까우면 1
-    // 멀어지면 0
-    float leftWhite =
-        1.0 - smoothstep(
-            0.12,
-            0.22,
-            leftDist
-        );
-
-
-    // =========================================================
-    // 4. 오른쪽 눈
-    // =========================================================
-
-    vec3 rightEye = normalize(
-        vec3(0.35, 0.25, 1.0)
-    );
-
-    float rightDist = distance(
-        S,
-        rightEye
-    );
-
-    float rightWhite =
-        1.0 - smoothstep(
-            0.12,
-            0.22,
-            rightDist
-        );
-
-
-    // =========================================================
-    // 5. 눈 흰자 만들기
-    // =========================================================
-
-    vec3 white = vec3(
-        0.95,
-        0.95,
-        0.90
-    );
-
-    albedo = mix(
-        albedo,
-        white,
-        max(leftWhite, rightWhite)
-    );
-
-
-    // =========================================================
-    // 6. 왼쪽 눈동자
-    // =========================================================
-
-    // 눈보다 조금 작게 만든다.
-    float leftPupil =
-        1.0 - smoothstep(
-            0.035,
-            0.075,
-            leftDist
-        );
-
-
-    // =========================================================
-    // 7. 오른쪽 눈동자
-    // =========================================================
-
-    float rightPupil =
-        1.0 - smoothstep(
-            0.035,
-            0.075,
-            rightDist
-        );
-
-
-    // 두 눈동자를 검은색으로 만든다.
-    vec3 black = vec3(
-        0.01,
-        0.01,
-        0.01
-    );
-
-    albedo = mix(
-        albedo,
-        black,
-        max(leftPupil, rightPupil)
-    );
-
-
-    // =========================================================
-    // 8. 입 만들기
-    // =========================================================
-    //
-    // 입은 아래쪽에 있는 삼각형이다.
-    //
-    // S.x = 좌우
-    // S.y = 위아래
-    //
-    // 우리가 원하는 영역:
-    //
-    //          ▲
-    //         / \
-    //        /   \
-    //       /_____\
-    //
-    //          입
-    // =========================================================
-
-
-    // 입이 시작되는 위쪽
-    float mouthTop =
-        smoothstep(
-            -0.12,
-            -0.18,
-            S.y
-        );
-
-
-    // 입이 끝나는 아래쪽
-    float mouthBottom =
-        1.0 - smoothstep(
-            -0.50,
-            -0.44,
-            S.y
-        );
-
-
-    // 현재 y 위치에 따라
-    // 삼각형의 가로 폭을 계산한다.
-    //
-    // 위쪽에서는 폭이 좁고
-    // 아래쪽으로 갈수록 넓어진다.
-    float width =
-        (-S.y - 0.12) * 0.9;
-
-
-    // x가 삼각형의 양쪽 경계 안에 있는지 확인
-    float insideX =
-        1.0 - smoothstep(
-            width,
-            width + 0.025,
-            abs(S.x)
-        );
-
-
-    // 세 조건을 모두 만족해야 입
-    float mouth =
-        mouthTop
-        * mouthBottom
-        * insideX;
-
-
-    // 입 색
-    albedo = mix(
-        albedo,
-        black,
-        mouth
-    );
-
-
-    // =========================================================
-    // 9. 최종 빛 적용
-    // =========================================================
-
-    vec3 color =
-        albedo *
-        (0.10 + 0.90 * diff);
-
-
-    fragColor =
-        vec4(color, 1.0);
+  // ── 공통 마무리: 낮과 밤 ─────────────────────────────────────
+  vec3 color = albedo * (0.12 + 0.88 * diff);     // 밤 쪽도 12%는 보이게(주변광), 낮 쪽은 빛만큼 밝게
+  fragColor = vec4(color, 1.0);                   // 불투명한 최종 색
 }
 `;
 
@@ -552,6 +388,7 @@ const program = createProgram(VS_SOURCE, FS_SOURCE);
 const uTimeLoc = gl.getUniformLocation(program, 'uTime');
 const uModelLoc = gl.getUniformLocation(program, 'uModel');
 const uViewProjLoc = gl.getUniformLocation(program, 'uViewProj');
+const uPlanetLoc = gl.getUniformLocation(program, 'uPlanet'); // 어떤 행성 무늬를 그릴지 고르는 번호 (0 수박, 1 바다)
 
 /* ══════════════════════════════════════════════════════════════════════════
    5. 버퍼를 만들어 GPU 메모리로 보낸다
@@ -583,8 +420,8 @@ function createMesh(mesh) {
   return { vao: vao, count: mesh.indices.length };
 }
 
-const ball = createMesh(makeSphere(1.3, 64, 128, 0.95, 0.62, 0.32)); // 공중에 뜰 공
-const floor = createMesh(makeBox(8.0, 0.12, 8.0, 0.42, 0.50, 0.62)); // 아주 납작한 상자 = 바닥
+// 두 행성은 같은 구 메시를 함께 쓴다. 무늬는 셰이더가 계산하므로 정점 색은 흰색(1,1,1)으로 둔다.
+const ball = createMesh(makeSphere(1.3, 64, 128, 1.0, 1.0, 1.0)); // 분할 64×128: 촘촘한 줄무늬도 매끄럽게
 
 /* ══════════════════════════════════════════════════════════════════════════
    6. 매 프레임 그린다
@@ -604,7 +441,7 @@ function render() {
 
   // 화면을 지운다
   gl.enable(gl.DEPTH_TEST); //앞에 있는 것만 남긴다.
-  gl.clearColor(0.04, 0.06, 0.10, 1.0);
+  gl.clearColor(0.01, 0.01, 0.04, 1.0); // 우주처럼 아주 어두운 남색 배경
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
   const time = (performance.now() - startTime) / 1000;
@@ -640,7 +477,7 @@ function render() {
   camera = M4.multiply(perspective, camera);
 
   // ⑥ 보이는 공간을 -1 ~ 1 로 줄인다 (그냥 크기 조절입니다)
-  camera = M4.multiply(M4.scale(1 / (3.4 * aspect), 1 / 3.4, -1 / 30), camera);
+  camera = M4.multiply(M4.scale(1 / (2.0 * aspect), 1 / 2.0, -1 / 30), camera); // 2.0: 작을수록 확대 (원래 3.4)
 
   const viewProj = camera;
 
@@ -648,16 +485,26 @@ function render() {
   gl.uniform1f(uTimeLoc, time);
   gl.uniformMatrix4fv(uViewProjLoc, false, viewProj);
 
-  // -바닥- 원점에 그대로 둔다 (윗면이 y=0이 되도록 살짝 내림)
-  gl.uniformMatrix4fv(uModelLoc, false, M4.translate(0,-0.06,0));
-  gl.bindVertexArray(floor.vao);
-  gl.drawElements(gl.TRIANGLES, floor.count, gl.UNSIGNED_SHORT, 0);
+  // 바닥은 우주 장면에 어울리지 않아 그리지 않는다.
+  gl.bindVertexArray(ball.vao);           // 두 행성 모두 같은 구 메시를 쓴다
 
-  // ── 공 — 공중에 띄우고 시간에 따라 돌린다
-  //    오른쪽부터 적용: 먼저 제자리에서 돌고(rotateY), 그다음 위로 올라간다(translate)
-  const model = M4.multiply( M4.rotateY(time * 0.8),M4.translate(0, 1.9, 0));
-  gl.uniformMatrix4fv(uModelLoc, false, model);
-  gl.bindVertexArray(ball.vao);
+  // ── 행성 1: 수박 행성 — 화면 가운데(높이 1.1)에서 자전만 한다
+  //    오른쪽부터 적용: 원점에서 y축으로 돌고(자전) → 위로 1.1 올린다
+  const melonModel = M4.multiply(M4.translate(0, 1.1, 0), M4.rotateY(time * 0.6));
+  gl.uniformMatrix4fv(uModelLoc, false, melonModel); // 이 행성의 모델 행렬
+  gl.uniform1i(uPlanetLoc, 0);            // 셰이더에게 "수박 무늬로 칠해라"
+  gl.drawElements(gl.TRIANGLES, ball.count, gl.UNSIGNED_SHORT, 0);
+
+  // ── 행성 2: 파도 바다 행성 — 작게 줄여 수박 주위를 공전한다 (2주차의 R·T 순서)
+  //    오른쪽부터 적용: ① 크기 0.6배 → ② 제자리 자전 → ③ 오른쪽으로 3.6 밀어내기
+  //                     → ④ 원점을 중심으로 공전 회전 → ⑤ 수박과 같은 높이로 올리기
+  let seaModel = M4.scale(0.6, 0.6, 0.6);                             // ① 수박보다 작은 행성 (0.6배)
+  seaModel = M4.multiply(M4.rotateY(time * 1.2), seaModel);          // ② 자전
+  seaModel = M4.multiply(M4.translate(3.6, 0, 0), seaModel);         // ③ 공전 반지름 3.6
+  seaModel = M4.multiply(M4.rotateY(time * 0.4), seaModel);          // ④ 공전 (밀어낸 뒤 돌리므로 궤도를 돈다)
+  seaModel = M4.multiply(M4.translate(0, 1.1, 0), seaModel);         // ⑤ 높이 맞추기
+  gl.uniformMatrix4fv(uModelLoc, false, seaModel); // 이 행성의 모델 행렬
+  gl.uniform1i(uPlanetLoc, 1);            // 셰이더에게 "바다 물결 무늬로 칠해라"
   gl.drawElements(gl.TRIANGLES, ball.count, gl.UNSIGNED_SHORT, 0);
 
   gl.bindVertexArray(null);
